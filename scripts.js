@@ -17,20 +17,20 @@ let selectedCityId = null;
 
 const cityColors = {
     'destination': {
-        default: '#2e8b57', // green
-        selected: '#1a5c38'  
+        default: '#13AAAA', // blue
+        selected: '#0C6868'  
     },
     'risk': {
-        default: '#f58231', // org 
-        selected: '#d62728'  
+        default: '#BA3250', // red 
+        selected: '#832232'  
     },
     'opportunity': {
-        default: '#4682b4', // blue
-        selected: '#1e3c6e' 
+        default: '#EC9A29', // orange
+        selected: '#9B611C' 
     },
     'origin': {
-        default: '#a9a9a9', // grey
-        selected: '#2f2f2f'  
+        default: '#839093', // grey
+        selected: '#202F33'  
     }
 };
 
