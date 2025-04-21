@@ -34,14 +34,14 @@ const cityColors = {
     }
 };
 
-function getCityColor(type, isSelected) {
-    const lowerType = type.toLowerCase(); 
+function getCityColor(archetype, isSelected) {
+    const lowerType = archetype.toLowerCase(); 
     
     if (cityColors[lowerType]) { //check for color for city type
         return isSelected ? cityColors[lowerType].selected : cityColors[lowerType].default;
     }
     
-    // default colors in case no city type
+    // default colors in case no city archetype
     return isSelected ? '#ff7700' : '#3887be';
 }
 
@@ -52,9 +52,20 @@ function csvToGeoJSON(csvData) {
             type: 'Feature',
             id: index, // use index as feature ID
             properties: {
-                NAME_CITY: row.NAME_CITY,
+                name: row["name.x"],
                 state: row.state,
-                type: row.type
+                archetype: row.type || "unknown",
+                county: row.name_county,
+                population: row.population,
+                median_income: row.median_income,
+                median_home_value: row.median_home_value,
+                median_age: row.median_age,
+                vacancy_rate: row.vacancy_rate,
+                climate_val: row.climate_val,
+                climate_flag: row.climate_flag,
+                growing_val: row.growing_val,
+                growing_flag: row.growing_flag,
+                type_ind: row.type_ind
                 // add other cols here eventually
             },
             geometry: {
@@ -81,6 +92,9 @@ async function loadCitiesData() {
             dynamicTyping: true, 
             skipEmptyLines: true
         });
+        console.log("Parsed CSV columns:", Object.keys(results.data[0]));
+        //debugging line
+
         
         const geojsonData = csvToGeoJSON(results.data);
         
@@ -89,6 +103,7 @@ async function loadCitiesData() {
         console.error("Error loading cities data:", error);
     }
 }
+
 
 function addCitiesToMap(geojsonData) {
     map.addSource('us-cities', { //add source for US cities
@@ -113,7 +128,7 @@ function addCitiesToMap(geojsonData) {
                 ['==', ['id'], selectedCityId],
                 [
                     'match',
-                    ['to-string', ['get', 'type']],
+                    ['to-string', ['get', 'archetype']],
                     'destination', cityColors.destination.selected,
                     'risk', cityColors['risk'].selected,
                     'opportunity', cityColors.opportunity.selected,
@@ -122,7 +137,7 @@ function addCitiesToMap(geojsonData) {
                 ],
                 [
                     'match',
-                    ['to-string', ['get', 'type']],
+                    ['to-string', ['get', 'archetype']],
                     'destination', cityColors.destination.default,
                     'risk', cityColors['risk'].default,
                     'opportunity', cityColors.opportunity.default,
@@ -164,7 +179,7 @@ function addCitiesToMap(geojsonData) {
                 ['==', ['id'], selectedCityId],
                 [
                     'match',
-                    ['to-string', ['get', 'type']],
+                    ['to-string', ['get', 'archetype']],
                     'destination', cityColors.destination.selected,
                     'risk', cityColors['risk'].selected,
                     'opportunity', cityColors.opportunity.selected,
@@ -173,7 +188,7 @@ function addCitiesToMap(geojsonData) {
                 ],
                 [
                     'match',
-                    ['to-string', ['get', 'type']],
+                    ['to-string', ['get', 'archetype']],
                     'destination', cityColors.destination.default,
                     'risk', cityColors['risk'].default,
                     'opportunity', cityColors.opportunity.default,
@@ -217,8 +232,14 @@ function displayCityInfo(cityProps) {
     const cityInfoDiv = document.getElementById('city-info');
     
     cityInfoDiv.innerHTML = `
-        <h2>${cityProps.NAME_CITY}, ${cityProps.state}</h2>
-        <div class="city-property"><span>Type:</span> ${cityProps.type}</div>
+        <h2>${cityProps.name}, ${cityProps.state}</h2>
+        <div class="city-property"><span>Archetype:</span> ${cityProps.archetype}</div>
+        <div class="city-property"><span>County:</span> ${cityProps.county}</div>
+        <div class="city-property"><span>Population:</span> ${cityProps.population.toLocaleString()}</div>
+        <div class="city-property"><span>Median Income:</span> $${cityProps.median_income?.toLocaleString()}</div>
+        <div class="city-property"><span>Median Home Value:</span> $${cityProps.median_home_value?.toLocaleString()}</div>
+       <!-- <div class="city-property"><span>Climate Risk Value:</span> ${cityProps.climate_val?.toFixed(2)}</div> -->
+       <!-- <div class="city-property"><span>Growth Value:</span> ${cityProps.growing_val?.toFixed(2)}</div> -->
     `;
     
     // Add more city properties here eventually and add recs here too
