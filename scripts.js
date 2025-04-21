@@ -124,7 +124,7 @@ function addCitiesToMap(geojsonData) {
                     'match',
                     ['to-string', ['get', 'type']],
                     'destination', cityColors.destination.default,
-                    'city', cityColors['risk'].default,
+                    'risk', cityColors['risk'].default,
                     'opportunity', cityColors.opportunity.default,
                     'origin', cityColors.origin.default,
                     '#3887be' // default general color
