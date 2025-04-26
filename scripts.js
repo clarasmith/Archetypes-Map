@@ -1,3 +1,5 @@
+
+
 //mapboxgl.accessToken = 'pk.eyJ1IjoiY2xhcmFzbWl0aCIsImEiOiJjbTkxejBsZG4wMGI4MnJvbGs0cWZuMm9sIn0.tbCUFAe - HudP7ZV9OujUPQ'
 // mapboxgl.accessToken = PUT TOKEN HERE
 mapboxgl.accessToken = 'pk.eyJ1IjoiY3dob25nIiwiYSI6ImNtNnozY2V1cDAwbTEybW9uNnI4dGV4eG4ifQ.tkb0d96wGhGW4-7Ds-iDCw';
@@ -17,20 +19,20 @@ let selectedCityId = null;
 
 const cityColors = {
     'destination': {
-        default: '#13AAAA', // blue
-        selected: '#0C6868'
+        default: '#87aa4b', // green
+        selected: '#66842c'
     },
     'risk': {
-        default: '#BA3250', // red 
-        selected: '#832232'
+        default: '#586994', // blue 
+        selected: '#354c72'
     },
     'opportunity': {
-        default: '#EC9A29', // orange
-        selected: '#9B611C'
+        default: '#a5444d', // red
+        selected: '#89303b'
     },
     'origin': {
         default: '#839093', // grey
-        selected: '#202F33'
+        selected: '#6d6360'
     }
 };
 
