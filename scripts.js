@@ -1,9 +1,5 @@
-
-
-//mapboxgl.accessToken = 'pk.eyJ1IjoiY2xhcmFzbWl0aCIsImEiOiJjbTkxejBsZG4wMGI4MnJvbGs0cWZuMm9sIn0.tbCUFAe - HudP7ZV9OujUPQ'
-// mapboxgl.accessToken = PUT TOKEN HERE
+// Using the provided Mapbox token
 mapboxgl.accessToken = 'pk.eyJ1IjoiY3dob25nIiwiYSI6ImNtNnozY2V1cDAwbTEybW9uNnI4dGV4eG4ifQ.tkb0d96wGhGW4-7Ds-iDCw';
-
 
 const mapOptions = {
     container: 'map-container',
@@ -14,19 +10,26 @@ const mapOptions = {
 
 const map = new mapboxgl.Map(mapOptions);
 
-// Track the currently selected city
+// Track the currently selected city and active filter
 let selectedCityId = null;
+let activeFilter = null;
+
+// Map tooltips
+const popup = new mapboxgl.Popup({
+    closeButton: false,
+    closeOnClick: false
+});
 
 const cityColors = {
     'destination': {
         default: '#87aa4b', // green
         selected: '#66842c'
     },
-    'risk': {
-        default: '#586994', // blue 
-        selected: '#354c72'
-    },
     'opportunity': {
+        default: '#786994', // purple 
+        selected: '#534870'
+    },
+    'risk': {
         default: '#a5444d', // red
         selected: '#89303b'
     },
@@ -34,6 +37,14 @@ const cityColors = {
         default: '#839093', // grey
         selected: '#6d6360'
     }
+};
+
+// Map archetype to full name
+const archetypeNames = {
+    'destination': 'Destination City',
+    'opportunity': 'Opportunity City',
+    'risk': 'City at Risk',
+    'origin': 'Origin City'
 };
 
 function getCityColor(archetype, isSelected) {
@@ -47,18 +58,24 @@ function getCityColor(archetype, isSelected) {
     return isSelected ? '#ff7700' : '#3887be';
 }
 
-// convert CSV data to GeoJSON
+// Convert CSV data to GeoJSON
 function csvToGeoJSON(csvData) {
-    const features = csvData.map((row, index) => {
+    const features = csvData.filter(row => {
+        // Filter out rows with invalid coordinates
+        return row && row.longitude && row.latitude && 
+               !isNaN(parseFloat(row.longitude)) && 
+               !isNaN(parseFloat(row.latitude));
+    }).map((row, index) => {
         return {
             type: 'Feature',
             id: index, // use index as feature ID
             properties: {
-                name: row["name.x"],
-                state: row.state,
-                archetype: row.type || "unknown",
-                county: row.name_county,
-                population: row.population,
+                name: row.clean_name || row.name || "Unknown",
+                state: row.state || "Unknown",
+                archetype: row.type && row.type.toLowerCase() || "unknown",
+                type_name: row.type_name || row.type || "unknown", // Use type_name if available
+                county: row.name_county || "Unknown",
+                population: row.population || 0,
                 median_income: row.median_income,
                 median_home_value: row.median_home_value,
                 median_age: row.median_age,
@@ -68,7 +85,6 @@ function csvToGeoJSON(csvData) {
                 growing_val: row.growing_val,
                 growing_flag: row.growing_flag,
                 type_ind: row.type_ind
-                // add other cols here eventually
             },
             geometry: {
                 type: 'Point',
@@ -83,7 +99,7 @@ function csvToGeoJSON(csvData) {
     };
 }
 
-// load CSV using fetch and Papa Parse
+// Load CSV using fetch and Papa Parse
 async function loadCitiesData() {
     try {
         const response = await fetch('./data/city_and_archetype.csv');
@@ -94,34 +110,44 @@ async function loadCitiesData() {
             dynamicTyping: true,
             skipEmptyLines: true
         });
-        console.log("Parsed CSV columns:", Object.keys(results.data[0]));
-        //debugging line
 
-
-        const geojsonData = csvToGeoJSON(results.data);
-
-        addCitiesToMap(geojsonData); // aaaaand add to map
+        // Check if data was parsed correctly
+        if (results.data && results.data.length > 0) {
+            const geojsonData = csvToGeoJSON(results.data);
+            addCitiesToMap(geojsonData); // Add to map
+            return true;
+        } else {
+            return false;
+        }
     } catch (error) {
-        console.error("Error loading cities data:", error);
+        return false;
     }
 }
 
+// Format population numbers to be more readable (K for thousands, M for millions)
+function formatPopulation(population) {
+    if (!population) return 'N/A';
+    
+    if (population >= 1000000) {
+        return (population / 1000000).toFixed(1) + 'M';
+    } else if (population >= 1000) {
+        return (population / 1000).toFixed(0) + 'K';
+    } else {
+        return population.toString();
+    }
+}
 
-// LEGEND!
+// Format vacancy rate as percentage
+function formatVacancyRate(rate) {
+    if (rate === null || rate === undefined) return 'N/A';
+    return Math.round(rate * 100) + '%';
+}
+
+// Add legend with icons instead of color circles
 function addLegend() {
     // Create legend container
     const legend = document.createElement('div');
     legend.className = 'map-legend';
-    legend.style.position = 'absolute';
-    legend.style.bottom = '30px';
-    legend.style.left = '10px';
-    legend.style.backgroundColor = 'white';
-    legend.style.padding = '10px';
-    legend.style.borderRadius = '4px';
-    legend.style.boxShadow = '0 0 10px rgba(0,0,0,0.1)';
-    legend.style.maxWidth = '300px';
-    legend.style.fontSize = '12px';
-    legend.style.lineHeight = '1.5';
     
     // Add title
     const title = document.createElement('h3');
@@ -135,31 +161,27 @@ function addLegend() {
     const legendItems = [
         {
             type: 'destination',
-            color: cityColors.destination.default,
             title: 'Destination Cities:',
             description: 'Cities facing relatively low future climate risks that are currently seeing robust economic and demographic growth.',
-            icon: './img/icons-01.png' 
+            icon: './img/icons-02.png' 
         },
         {
             type: 'opportunity',
-            color: cityColors.opportunity.default,
             title: 'Opportunity Cities:',
             description: 'Cities with low climate risk but long-term economic and population decline that could benefit from in-migration to revitalize neighborhoods.',
-            icon: './img/icons-02.png'
+            icon: './img/icons-01.png'
         },
         {
             type: 'risk',
-            color: cityColors.risk.default,
             title: 'Cities at Risk:',
             description: 'Cities with high climate risk that continue to grow rapidly, including cities facing increasingly extreme heat and coastal cities that face increasing flood risk.',
-            icon: './img/icons-03.png'
+            icon: './img/icons-04.png'
         },
         {
             type: 'origin',
-            color: cityColors.origin.default,
             title: 'Origin Cities:',
             description: 'Cities experiencing long-term decline in population and a relatively high climate risk. These cities are outside the scope of our project.',
-            icon: './img/icons-04.png'
+            icon: './img/icons-03.png'
         }
     ];
     
@@ -170,85 +192,142 @@ function addLegend() {
         itemContainer.style.display = 'flex';
         itemContainer.style.alignItems = 'flex-start';
         
-        // Color circle
-        const colorCircle = document.createElement('div');
-        colorCircle.style.width = '12px';
-        colorCircle.style.height = '12px';
-        colorCircle.style.borderRadius = '50%';
-        colorCircle.style.backgroundColor = item.color;
-        colorCircle.style.marginRight = '8px';
-        colorCircle.style.marginTop = '3px';
-        colorCircle.style.flexShrink = '0';
-        
-        // Text container
-        const textContainer = document.createElement('div');
-        
-        // Title with icon
-        const titleContainer = document.createElement('div');
-        titleContainer.style.display = 'flex';
-        titleContainer.style.alignItems = 'center';
-        titleContainer.style.marginBottom = '2px';
-        
-        const titleText = document.createElement('strong');
-        titleText.textContent = item.title + ' ';
-        titleText.style.marginRight = '4px';
-        
+        // Icon directly instead of color circle
         const icon = document.createElement('img');
         icon.src = item.icon;
         icon.alt = item.type + ' icon';
         icon.style.height = '16px';
         icon.style.width = 'auto';
+        icon.style.marginRight = '8px';
+        icon.style.marginTop = '3px';
+        icon.style.flexShrink = '0';
         
-        titleContainer.appendChild(titleText);
-        titleContainer.appendChild(icon);
+        // Text container
+        const textContainer = document.createElement('div');
+        
+        // Title text
+        const titleText = document.createElement('strong');
+        titleText.textContent = item.title + ' ';
         
         // Description
         const description = document.createElement('div');
         description.textContent = item.description;
         
-        textContainer.appendChild(titleContainer);
+        textContainer.appendChild(titleText);
         textContainer.appendChild(description);
         
-        itemContainer.appendChild(colorCircle);
+        itemContainer.appendChild(icon);
         itemContainer.appendChild(textContainer);
         
         legend.appendChild(itemContainer);
-    });
-    
-    // Add toggle functionality
-    const toggleButton = document.createElement('button');
-    toggleButton.textContent = 'Hide Legend';
-    toggleButton.style.padding = '4px 8px';
-    toggleButton.style.fontSize = '11px';
-    toggleButton.style.backgroundColor = '#f5f5f5';
-    toggleButton.style.border = '1px solid #ddd';
-    toggleButton.style.borderRadius = '3px';
-    toggleButton.style.cursor = 'pointer';
-    toggleButton.style.marginTop = '5px';
-    
-    let isLegendVisible = true;
-    const legendContent = document.createElement('div');
-    legendContent.id = 'legend-content';
-    
-    // Move all children except title to legend content
-    while (legend.children.length > 1) {
-        legendContent.appendChild(legend.children[1]);
-    }
-    
-    legend.appendChild(legendContent);
-    legend.appendChild(toggleButton);
-    
-    toggleButton.addEventListener('click', () => {
-        isLegendVisible = !isLegendVisible;
-        legendContent.style.display = isLegendVisible ? 'block' : 'none';
-        toggleButton.textContent = isLegendVisible ? 'Hide Legend' : 'Show Legend';
     });
     
     // Add to map container
     document.getElementById('map-container').appendChild(legend);
 }
 
-// Create search functionality
+// Create filter buttons in the legend
+function addFilterButtons() {
+    // Get or create the legend
+    let legend = document.querySelector('.map-legend');
+    if (!legend) {
+        legend = document.createElement('div');
+        legend.className = 'map-legend';
+        document.getElementById('map-container').appendChild(legend);
+    }
+    
+    // Create filter text
+    const filterText = document.createElement('div');
+    filterText.style.margin = '15px 0 8px 0';
+    filterText.style.fontWeight = 'bold';
+    filterText.textContent = 'Filter by city type:';
+    legend.appendChild(filterText);
+    
+    // Create the filter container
+    const filterContainer = document.createElement('div');
+    filterContainer.className = 'filter-buttons';
+    
+    const archetypes = [
+        { id: 'destination', label: 'Destination' },
+        { id: 'opportunity', label: 'Opportunity' },
+        { id: 'risk', label: 'At Risk' },
+        { id: 'origin', label: 'Origin' },
+    ];
+    
+    // Add show all button first, more distinct
+    const resetButton = document.createElement('button');
+    resetButton.className = 'filter-button reset active'; // Active by default
+    resetButton.textContent = 'All';
+    resetButton.addEventListener('click', clearFilter);
+    filterContainer.appendChild(resetButton);
+    
+    // Create buttons for each archetype
+    archetypes.forEach(archetype => {
+        const button = document.createElement('button');
+        button.className = `filter-button ${archetype.id}`;
+        button.textContent = archetype.label;
+        button.dataset.filter = archetype.id;
+        
+        button.addEventListener('click', () => {
+            if (activeFilter === archetype.id) {
+                // Clicking active filter resets it
+                clearFilter();
+            } else {
+                applyFilter(archetype.id);
+            }
+        });
+        
+        filterContainer.appendChild(button);
+    });
+    
+    legend.appendChild(filterContainer);
+}
+
+// Apply filter to show only cities of selected archetype
+function applyFilter(archetype) {
+    // Remove active class from all buttons
+    document.querySelectorAll('.filter-button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Add active class to selected filter button
+    const activeBtn = document.querySelector(`.filter-button[data-filter="${archetype}"]`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+    }
+    
+    // Set the active filter
+    activeFilter = archetype;
+    
+    // Apply filter to the map layer - check if map layer exists first
+    if (map.getLayer('cities-points')) {
+        map.setFilter('cities-points', ['==', ['get', 'archetype'], archetype]);
+    }
+}
+
+// Clear filter to show all cities
+function clearFilter() {
+    // Remove active class from all buttons except the reset button
+    document.querySelectorAll('.filter-button:not(.reset)').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Add active class to reset button
+    const resetBtn = document.querySelector('.filter-button.reset');
+    if (resetBtn) {
+        resetBtn.classList.add('active');
+    }
+    
+    // Clear the active filter
+    activeFilter = null;
+    
+    // Remove the filter from the map layer - check if map layer exists first
+    if (map.getLayer('cities-points')) {
+        map.setFilter('cities-points', null);
+    }
+}
+
+// Setup search functionality
 function setupSearch() {
     const searchInput = document.getElementById('search-input');
     const searchResults = document.getElementById('search-results');
@@ -284,57 +363,8 @@ function setupSearch() {
                 resultItem.textContent = `${city.properties.name}, ${city.properties.state}`;
 
                 resultItem.addEventListener('click', () => {
-                    // Select the city
-                    selectedCityId = city.id;
-
-                    // Update city styling
-                    map.setPaintProperty('cities-points', 'circle-radius', [
-                        'case',
-                        ['==', ['id'], selectedCityId],
-                        9,
-                        6
-                    ]);
-
-                    map.setPaintProperty('cities-points', 'circle-color', [
-                        'case',
-                        ['==', ['id'], selectedCityId],
-                        [
-                            'match',
-                            ['to-string', ['get', 'archetype']],
-                            'destination', cityColors.destination.selected,
-                            'risk', cityColors['risk'].selected,
-                            'opportunity', cityColors.opportunity.selected,
-                            'origin', cityColors.origin.selected,
-                            '#ff7700'
-                        ],
-                        [
-                            'match',
-                            ['to-string', ['get', 'archetype']],
-                            'destination', cityColors.destination.default,
-                            'risk', cityColors['risk'].default,
-                            'opportunity', cityColors.opportunity.default,
-                            'origin', cityColors.origin.default,
-                            '#3887be'
-                        ]
-                    ]);
-
-                    map.setPaintProperty('cities-points', 'circle-stroke-width', [
-                        'case',
-                        ['==', ['id'], selectedCityId],
-                        3,
-                        1
-                    ]);
-
-                    // Update sidebar
-                    displayCityInfo(city.properties);
-
-                    // Fly to the city
-                    map.flyTo({
-                        center: city.geometry.coordinates,
-                        zoom: 8,
-                        speed: 0.8
-                    });
-
+                    selectCity(city);
+                    
                     // Clear search
                     searchInput.value = '';
                     searchResults.innerHTML = '';
@@ -359,24 +389,106 @@ function setupSearch() {
     });
 }
 
+// Function to select a city (used by both search and click events)
+function selectCity(city) {
+    // Select the city
+    selectedCityId = city.id;
+
+    // Update city styling
+    updateSelectedCityStyle();
+
+    // Update sidebar
+    displayCityInfo(city.properties);
+
+    // Fly to the city
+    map.flyTo({
+        center: city.geometry.coordinates,
+        zoom: 8,
+        speed: 0.8
+    });
+}
+
+// Update the style for the selected city
+function updateSelectedCityStyle() {
+    if (!map.getLayer('cities-points')) {
+        return;
+    }
+    
+    // Set a fixed larger radius for the selected city (not zoom-dependent)
+    map.setPaintProperty('cities-points', 'circle-radius', [
+        'case',
+        ['==', ['id'], selectedCityId],
+        12, // Selected city radius (fixed larger size)
+        {
+            'base': 1.5,
+            'stops': [
+                [3, 4.5],   // At zoom level 3, radius is 4.5px (1.5x larger)
+                [6, 7.5],   // At zoom level 6, radius is 7.5px (1.5x larger)
+                [10, 10.5]  // At zoom level 10, radius is 10.5px (1.5x larger)
+            ]
+        }
+    ]);
+    
+    map.setPaintProperty('cities-points', 'circle-color', [
+        'case',
+        ['==', ['id'], selectedCityId],
+        [
+            'match',
+            ['to-string', ['get', 'archetype']],
+            'destination', cityColors.destination.selected,
+            'risk', cityColors.risk.selected,
+            'opportunity', cityColors.opportunity.selected,
+            'origin', cityColors.origin.selected,
+            '#ff7700'
+        ],
+        [
+            'match',
+            ['to-string', ['get', 'archetype']],
+            'destination', cityColors.destination.default,
+            'risk', cityColors.risk.default,
+            'opportunity', cityColors.opportunity.default,
+            'origin', cityColors.origin.default,
+            '#3887be'
+        ]
+    ]);
+
+    map.setPaintProperty('cities-points', 'circle-stroke-width', [
+        'case',
+        ['==', ['id'], selectedCityId],
+        3,
+        1
+    ]);
+}
+
 function addCitiesToMap(geojsonData) {
-    map.addSource('us-cities', { //add source for US cities
+    // Check if source already exists
+    if (map.getSource('us-cities')) {
+        map.getSource('us-cities').setData(geojsonData);
+        return;
+    }
+    
+    // Add source for US cities
+    map.addSource('us-cities', {
         type: 'geojson',
         data: geojsonData,
         generateId: true
     });
-
-    map.addLayer({ // and add cities (AS POINTS FOR NOW) with color based on archetype
+    
+    // Add cities layer with zoom-dependent styling
+    map.addLayer({
         id: 'cities-points',
         type: 'circle',
         source: 'us-cities',
         paint: {
-            'circle-radius': [
-                'case',
-                ['==', ['id'], selectedCityId],
-                9, // select city radius is larger by 1.5
-                6  // default radius
-            ],
+            // Simple stops array for circle-radius with less dramatic change
+            'circle-radius': {
+                'base': 1.5,
+                'stops': [
+                    [3, 4.5],   // At zoom level 3, radius is 4.5px (1.5x larger)
+                    [6, 7.5],   // At zoom level 6, radius is 7.5px (1.5x larger)
+                    [10, 10.5]  // At zoom level 10, radius is 10.5px (1.5x larger)
+                ]
+            },
             'circle-color': [
                 'case',
                 ['==', ['id'], selectedCityId],
@@ -384,7 +496,7 @@ function addCitiesToMap(geojsonData) {
                     'match',
                     ['to-string', ['get', 'archetype']],
                     'destination', cityColors.destination.selected,
-                    'risk', cityColors['risk'].selected,
+                    'risk', cityColors.risk.selected,
                     'opportunity', cityColors.opportunity.selected,
                     'origin', cityColors.origin.selected,
                     '#ff7700' // default selected color
@@ -393,7 +505,7 @@ function addCitiesToMap(geojsonData) {
                     'match',
                     ['to-string', ['get', 'archetype']],
                     'destination', cityColors.destination.default,
-                    'risk', cityColors['risk'].default,
+                    'risk', cityColors.risk.default,
                     'opportunity', cityColors.opportunity.default,
                     'origin', cityColors.origin.default,
                     '#3887be' // default general color
@@ -403,129 +515,139 @@ function addCitiesToMap(geojsonData) {
             'circle-stroke-width': [
                 'case',
                 ['==', ['id'], selectedCityId],
-                3, // selected city has thicker stroke x3
+                3, // selected city has thicker stroke
                 1  // default stroke width
             ],
             'circle-stroke-color': '#ffffff'
         }
     });
-
-    // click interaction: show city details in the sidebar
-    map.on('click', 'cities-points', (e) => {
-        if (e.features.length > 0) {
-            const feature = e.features[0];
-            const cityProps = feature.properties;
-
-            // updated the selected city ID
-            selectedCityId = feature.id;
-
-            // styling for the selected city (this is handled by the paint property expressions)
-            map.setPaintProperty('cities-points', 'circle-radius', [
-                'case',
-                ['==', ['id'], selectedCityId],
-                9, //  radius for selected city
-                6  // default radius
-            ]);
-
-            // trigger a repaint to apply the new color settings
-            map.setPaintProperty('cities-points', 'circle-color', [
-                'case',
-                ['==', ['id'], selectedCityId],
-                [
-                    'match',
-                    ['to-string', ['get', 'archetype']],
-                    'destination', cityColors.destination.selected,
-                    'risk', cityColors['risk'].selected,
-                    'opportunity', cityColors.opportunity.selected,
-                    'origin', cityColors.origin.selected,
-                    '#ff7700' // Default selected color
-                ],
-                [
-                    'match',
-                    ['to-string', ['get', 'archetype']],
-                    'destination', cityColors.destination.default,
-                    'risk', cityColors['risk'].default,
-                    'opportunity', cityColors.opportunity.default,
-                    'origin', cityColors.origin.default,
-                    '#3887be' // Default color
-                ]
-            ]);
-
-            map.setPaintProperty('cities-points', 'circle-stroke-width', [
-                'case',
-                ['==', ['id'], selectedCityId],
-                3, // thicker stroke for selected city
-                1  // default stroke width
-            ]);
-
-            // Update sidebar with city information
-            displayCityInfo(cityProps);
-
-            // Animation! Fly to the selected city
-            map.flyTo({
-                center: feature.geometry.coordinates,
-                zoom: 8,
-                speed: 0.8
-            });
+    
+    // Add hover effect with tooltip
+    map.on('mouseenter', 'cities-points', (e) => {
+        map.getCanvas().style.cursor = 'pointer';
+        
+        if (e.features && e.features.length > 0) {
+            const coordinates = e.features[0].geometry.coordinates.slice();
+            const name = e.features[0].properties.name;
+            const state = e.features[0].properties.state;
+            
+            // Create tooltip content
+            const tooltipContent = `${name}, ${state}`;
+            
+            // Ensure that if the map is zoomed out such that multiple
+            // copies of the feature are visible, the popup appears
+            // over the copy being pointed to.
+            while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+                coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+            }
+            
+            // Show the tooltip
+            popup.setLngLat(coordinates)
+                .setHTML(tooltipContent)
+                .addTo(map);
         }
     });
-
-    // Cursor to pointer on city hover
-    map.on('mouseenter', 'cities-points', () => {
-        map.getCanvas().style.cursor = 'pointer';
-    });
-
+    
     map.on('mouseleave', 'cities-points', () => {
         map.getCanvas().style.cursor = '';
+        popup.remove();
+    });
+
+    // Click interaction: show city details in the sidebar
+    map.on('click', 'cities-points', (e) => {
+        if (e.features && e.features.length > 0) {
+            const feature = e.features[0];
+            selectCity(feature);
+        }
     });
 }
-
 
 // Display city information in the sidebar
 function displayCityInfo(cityProps) {
     const cityInfoDiv = document.getElementById('city-info');
+    
+    // Get the full archetype name
+    const archetypeName = cityProps.type_name || archetypeNames[cityProps.archetype] || cityProps.archetype;
+    
+    // Get the color for this archetype
+    const archetypeColor = cityColors[cityProps.archetype]?.default || '#333';
 
-    cityInfoDiv.innerHTML = `
+    // City Best Practices by Archetype
+    const bestPracticesByArchetype = {
+        'risk': [
+            "Make a climate migration plan.",
+            "Right size real estate risk.",
+            "Overhaul zoning comprehensively, focused on density and resilience.",
+            "Improve climate resilience in civil infrastructure.",
+            "Strengthen healthcare and EMS infrastructure."
+        ],
+        'destination': [
+            "Make a climate migration plan.",
+            "Expand inclusive, innovative outreach and public participation.",
+            "Overhaul zoning comprehensively, focused on density and resilience.",
+            "Create tax and subsidy programs for affordable, resilient housing development.",
+            "Foster policies that facilitate community land ownership."
+        ],
+        'opportunity': [
+            "Expand small business financial support.",
+            "Encourage incentives for private sector inter-office transfers.",
+            "Make a climate migration plan.",
+            "Strengthen healthcare and EMS infrastructure.",
+            "Expand bus transit."
+        ],
+        'origin': [] // No specific practices for this type
+    };
+    
+    // Get best practices for this city type
+    const bestPractices = bestPracticesByArchetype[cityProps.archetype] || [];
+    
+    // Basic city info
+    let cityInfoHTML = `
         <h2>${cityProps.name}, ${cityProps.state}</h2>
-        <div class="city-property"><span>Archetype:</span> ${cityProps.archetype}</div>
-        <div class="city-property"><span>County:</span> ${cityProps.county}</div>
-        <div class="city-property"><span>Population:</span> ${cityProps.population.toLocaleString()}</div>
-        <div class="city-property"><span>Median Income:</span> $${cityProps.median_income?.toLocaleString()}</div>
-        <div class="city-property"><span>Median Home Value:</span> $${cityProps.median_home_value?.toLocaleString()}</div>
-       <!-- <div class="city-property"><span>Climate Risk Value:</span> ${cityProps.climate_val?.toFixed(2)}</div> -->
-       <!-- <div class="city-property"><span>Growth Value:</span> ${cityProps.growing_val?.toFixed(2)}</div> -->
+        <div class="city-archetype" style="color: ${archetypeColor};">${archetypeName}</div>
+        <div class="city-property"><span>Population:</span> ${formatPopulation(cityProps.population)}</div>
+        <div class="city-property"><span>County:</span> ${cityProps.county || 'N/A'}</div>
+        <div class="city-property"><span>Vacancy Rate:</span> ${formatVacancyRate(cityProps.vacancy_rate)}</div>
+        <div class="city-property"><span>Median Income:</span> $${cityProps.median_income?.toLocaleString() || 'N/A'}</div>
+        <div class="city-property"><span>Median Home Value:</span> $${cityProps.median_home_value?.toLocaleString() || 'N/A'}</div>
     `;
-
-    // Add more city properties here eventually and add recs here too
-}
-
-// wait for map to be loaded before fetching data
-map.on('load', () => {
-    loadCitiesData().then(() => {
-        setupSearch();
-        addLegend(); 
-    });
-});
-
-
-// Make loadCitiesData return a promise
-async function loadCitiesData() {
-    try {
-        const response = await fetch('./data/city_and_archetype.csv');
-        const csvText = await response.text();
-
-        const results = Papa.parse(csvText, {
-            header: true,
-            dynamicTyping: true,
-            skipEmptyLines: true
-        });
-
-        const geojsonData = csvToGeoJSON(results.data);
-
-        addCitiesToMap(geojsonData);
-        return true; // Return success
-    } catch (error) {
-        console.error("Error loading cities data:", error);
-        return false;
+    
+    // Add best practices section if available for this city type
+    if (bestPractices.length > 0) {
+        cityInfoHTML += `
+            <div class="best-practices">
+                <h3>Urgent priority actions for ${cityProps.name}:</h3>
+                <ul>
+                    ${bestPractices.map(practice => `<li>${practice}</li>`).join('')}
+                </ul>
+                <a href="https://drive.google.com/file/d/1B68MkBP_PyyLm_oDq9HBN__tvExSU_WO/view?usp=sharing" target="_blank">
+                    See the full report and full list of best practices here
+                </a>
+            </div>
+        `;
     }
+    
+    cityInfoDiv.innerHTML = cityInfoHTML;
 }
+
+// Add page title
+function addPageTitle() {
+    const title = document.createElement('div');
+    title.className = 'page-title';
+    title.textContent = 'Climate Migration Archetype Map';
+    document.body.appendChild(title);
+}
+
+// Wait for map to be loaded before fetching data
+map.on('load', () => {
+    addPageTitle();
+    
+    // Small delay to ensure map is ready
+    setTimeout(() => {
+        loadCitiesData().then(() => {
+            setupSearch();
+            addLegend();
+            addFilterButtons();
+        });
+    }, 100);
+});
