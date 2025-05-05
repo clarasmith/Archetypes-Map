@@ -511,7 +511,7 @@ function addCitiesToMap(geojsonData) {
                     '#3887be' // default general color
                 ]
             ],
-            'circle-opacity': 0.9,
+            'circle-opacity': 1,
             'circle-stroke-width': [
                 'case',
                 ['==', ['id'], selectedCityId],
